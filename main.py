@@ -195,10 +195,10 @@ active_selection = {
     "trainee": None,
     "veterans": []
 }
-turn_delay_min_sec = 2.5
-turn_delay_max_sec = 5.0
-turn_delay_restore_min_sec = 2.5
-turn_delay_restore_max_sec = 5.0
+turn_delay_min_sec = 1.0
+turn_delay_max_sec = 2.0
+turn_delay_restore_min_sec = 1.0
+turn_delay_restore_max_sec = 2.0
 turn_delay_disabled = False
 preset_store = PresetStore(DIR)
 career_runner = CareerRunner(DIR)
@@ -256,10 +256,10 @@ def get_turn_delay():
     import career_bot.delay as delay_module
     return {
         "success": True,
-        "min": getattr(delay_module, "TURN_DELAY_MIN", 2.5),
-        "max": getattr(delay_module, "TURN_DELAY_MAX", 5.0),
-        "restore_min": getattr(delay_module, "TURN_DELAY_RESTORE_MIN", 2.5),
-        "restore_max": getattr(delay_module, "TURN_DELAY_RESTORE_MAX", 5.0),
+        "min": getattr(delay_module, "TURN_DELAY_MIN", 1.0),
+        "max": getattr(delay_module, "TURN_DELAY_MAX", 2.0),
+        "restore_min": getattr(delay_module, "TURN_DELAY_RESTORE_MIN", 1.0),
+        "restore_max": getattr(delay_module, "TURN_DELAY_RESTORE_MAX", 2.0),
         "disabled": getattr(delay_module, "GLOBAL_DELAYS_DISABLED", False)
     }
 
@@ -557,7 +557,7 @@ def get_account_status(data, career_data=None):
             "total": (coin_info.get('fcoin', 0) or 0) + (coin_info.get('coin', 0) or 0)
         },
         "gold": gold,
-        "clocks": active_client.item_map.get(95, 0) if active_client else 0,
+        "clocks": getattr(active_client, 'item_map', {}).get(95, 0) if active_client else 0,
         "career": None
     }
     if career:
@@ -815,6 +815,9 @@ def start_career_from_request(req):
                     try:
                         res = active_client.call("load/index", {"adid": ""})
                         active_client.refresh_cached_account_state(res.get("data", {}))
+                        tp_info = active_client.tp_info
+                        active_start_state['tp_info'] = tp_info
+                        current_tp = int(tp_info.get('current_tp') or 0)
                     except Exception:
                         pass
                 dna_sleep(1.0, 1.0)
@@ -1057,7 +1060,7 @@ async def login(req: LoginRequest):
             active_parent_cards[int(chara.get('trained_chara_id'))] = lineage_cards
             active_parent_rank_points[int(chara.get('trained_chara_id'))] = {
                 'rank': chara.get('rank', 0),
-                'rank_score': chara.get('rank_score', 0)
+                'rank_point': chara.get('rank_score', 0)
             }
 
                 
@@ -1208,6 +1211,7 @@ async def run_career(req: RunCareerRequest):
     try:
         account = active_account or {}
         career = account.get("career") or {}
+        load_data = {}
         if career.get("active"):
             index_result = active_client.call('load/index')
             load_data = index_result.get('data', {})
