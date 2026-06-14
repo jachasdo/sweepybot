@@ -156,7 +156,7 @@ class MantStrategy(ScenarioStrategy):
             return medic
         if turn in SUMMER_CAMP_TURNS and recreation and (vital <= rest_threshold or failure >= 35 or best_score < 0):
             return recreation
-        if self._should_recreate(recreation, preset, turn, motivation, vital, best_score):
+        if self._should_recreate(recreation, preset, turn, motivation, vital, best_score, best_failure=failure):
             return recreation
         if rest and (vital <= rest_threshold or failure >= 35 or best_score < 0):
             return rest
@@ -204,7 +204,9 @@ class MantStrategy(ScenarioStrategy):
             if turn in SUMMER_CAMP_TURNS and recreation:
                 return recreation
             return rest
-        return self._enabled_training_idx(enabled, 4)
+        # Prefer Wit (idx 4) to conserve energy, but fall back to rest if unavailable
+        wit_cmd = self._enabled_training_idx(enabled, 4)
+        return wit_cmd if wit_cmd is not None else rest
 
     def _has_curable_bad_status(self, chara, preset):
         wanted = self._cure_condition_names(preset)
@@ -275,7 +277,7 @@ class MantStrategy(ScenarioStrategy):
             if bond >= 80:
                 continue
 
-            time_decay = max(0.0, (72 - turn) / 72.0)
+            time_decay = max(0.05, (72 - turn) / 72.0)
             efficiency_boost = 1.0 + (bond / 80.0) * 0.5 if bond >= 60 else 1.0
             
             weight = time_decay * efficiency_boost
@@ -347,7 +349,9 @@ class MantStrategy(ScenarioStrategy):
                     gain = float(item.get("value") or 0)
                     break
             if vital >= max_vital or (gain > 0 and vital + gain > max_vital):
-                score *= 0.35 if turn > 72 else 0.75
+                # In the finish stretch (turn > 72) be less aggressive penalising Wit at full HP;
+                # SP generation still matters for the final skill purchase window.
+                score *= 0.60 if turn > 72 else 0.75
             elif vital < 85:
                 score *= 1.03
         extra = self._extra_weight(idx, turn, preset)
@@ -436,12 +440,15 @@ class MantStrategy(ScenarioStrategy):
             return int(preset.get("motivation_threshold_year2") or 4)
         return int(preset.get("motivation_threshold_year3") or 4)
 
-    def _should_recreate(self, recreation, preset, turn, motivation, vital, best_score):
+    def _should_recreate(self, recreation, preset, turn, motivation, vital, best_score, best_failure=0):
         if not recreation:
             return False
         if turn in SUMMER_CAMP_TURNS:
             return False
-        if motivation < self._mood_threshold(turn, preset) and vital < 90 and best_score <= 0.3:
+        # Adjust effective score downward by failure rate so a risky train doesn't
+        # block recreation when mood and energy are low.
+        effective_score = best_score * max(0.0, 1.0 - float(best_failure) / 100.0)
+        if motivation < self._mood_threshold(turn, preset) and vital < 90 and effective_score <= 0.3:
             return True
         if not preset.get("prioritize_recreation"):
             return False
@@ -458,7 +465,7 @@ class MantStrategy(ScenarioStrategy):
         energy_ok = vital <= int(row[1])
         score_ok = True
         if len(row) > 2:
-            score_ok = best_score <= float(row[2])
+            score_ok = effective_score <= float(row[2])
         return mood_ok and energy_ok and score_ok
 
     def choose_from_event(self, event, current_turn):
